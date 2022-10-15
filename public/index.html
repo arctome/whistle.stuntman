@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stuntman - Whistle plugin</title>
+  <link rel="stylesheet" href="./assets/pure-min.css">
+  <script src="./assets/dayjs.min.js"></script>
+  <script src="./assets/alpine.min.js" defer></script>
+  <style>
+    #app {
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    .button-success {
+      background: rgb(28, 184, 65);
+      color: #fff;
+    }
+
+    .button-error {
+      background: rgb(202, 60, 60);
+      color: #fff;
+    }
+
+    .button-warning {
+      background: rgb(223, 117, 20);
+      color: #fff;
+    }
+
+    .button-secondary {
+      background: rgb(66, 184, 221);
+    }
+
+    .fullscreen-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      align-items: center;
+      justify-content: center;
+      display: flex;
+      background-color: rgba(0, 0, 0, .5);
+    }
+
+    .fullscreen-layer .dialog {
+      background-color: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      width: 600px;
+      max-height: 90%;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    #app table {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .form-handlers {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .table-pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 5px;
+    }
+
+    .table-pagination button {
+      cursor: pointer;
+      margin: 0 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app" x-data>
+    <!-- Single dialog, only update, no creation needed -->
+    <alpine-dialog component-name="config">
+      <form x-data="config" @submit.prevent="saveConfig($data)" class="pure-form pure-form-stacked">
+        <fieldset>
+          <legend>Stuntman Configuration</legend>
+          <div>
+            <label for="run_mode">Current Mode: </label>
+            <select name="run_mode" id="run_mode" x-ref="div" x-model="data.run_mode">
+              <option value="" :selected="data.run_mode === ''">Disabled</option>
+              <option value="global" :selected="data.run_mode === 'global'">Global</option>
+              <option value="pac" :selected="data.run_mode === 'pac'">PAC</option>
+            </select>
+          </div>
+          <template x-if="$refs.div._x_model.get() === 'pac'">
+            <div>
+              <label for="rules_content">PAC Mode rules: </label>
+              <textarea name="rules_content" id="rules_content" cols="30" rows="10"
+                x-model="data.rules_content"></textarea>
+            </div>
+          </template>
+          <div>
+            <label for="query_key">Query Key: </label>
+            <input type="text" id="query_key" x-model="data.query_key">
+          </div>
+          <div>
+            <label for="autosave_response">Save Response?: </label>
+            <input type="checkbox" name="autosave_response" id="autosave_response" x-model="data.autosave_response">
+          </div>
+          <div>
+            <button class="pure-button pure-button-primary" type="submit">Save Configuration</button>
+          </div>
+        </fieldset>
+      </form>
+    </alpine-dialog>
+    <!-- Dialog for Mock, could be created or updated -->
+    <alpine-dialog component-name="mock">
+      <form x-data="mock" @submit.prevent="saveMock($data)" @loadmockform.document="loadMock($event)"
+        class="pure-form pure-form-stacked">
+        <fieldset>
+          <template x-if="data.mock_id !== ''">
+            <legend>Update Mock</legend>
+          </template>
+          <template x-if="data.mock_id === ''">
+            <legend>Create New Mock</legend>
+          </template>
+          <template x-if="data.mock_id !== ''">
+            <div>
+              <label for="mock_id">Mock ID: </label>
+              <input type="text" disabled x-model="data.mock_id">
+            </div>
+          </template>
+          <div>
+            <label for="title">Title: </label>
+            <input type="text" x-model="data.title">
+          </div>
+          <div>
+            <label for="desc">Description: </label>
+            <input type="text" x-model="data.desc">
+          </div>
+          <div>
+            <label for="url">URL: </label>
+            <input type="text" x-model="data.url">
+          </div>
+          <div>
+            <label for="category">Category (use <span title="A comma is a half char of ,">comma</span> to split):
+            </label>
+            <input type="text" x-model="data.category">
+          </div>
+          <template x-if="data.mock_id !== ''">
+            <div>
+              <label for="conditions">Current Condition: </label>
+              <select name="conditions" id="conditions" x-ref="current_con" x-model="data.current_con">
+                <option value="">Disabled</option>
+                <template x-for="con in data.cons">
+                  <option :value="con.con_id" :selected="data.current_con === con.con_id" x-text="con.con_name">
+                  </option>
+                </template>
+              </select>
+              <template x-if="$refs.current_con._x_model.get()">
+                <button type="button" class="pure-button"
+                  @click.prevent="dispatchEvt('toggledialog', {detail: {name: 'condition', extraEvent: {name: 'loadconform', detail: {mock_id: data.mock_id, con_id: data.current_con}}}})">Edit
+                  Current Condition</button>
+              </template>
+            </div>
+          </template>
+          <div class="form-handlers">
+            <div class="left">
+              <template x-if="data.mock_id !== ''">
+                <button type="button" class="pure-button"
+                  @click.prevent="dispatchEvt('toggledialog', {detail: {name: 'condition', extraEvent: {name: 'loadconform', detail: {mock_id: data.mock_id}}}})">Add
+                  Condition</button>
+              </template>
+            </div>
+            <div class="right">
+              <button type="submit" class="pure-button">Save</button>
+            </div>
+          </div>
+        </fieldset>
+      </form>
+    </alpine-dialog>
+    <alpine-dialog component-name="condition">
+      <form x-data="condition" @submit.prevent="saveCondition($data)" @loadconform.document="loadCondition($event)"
+        class="pure-form pure-form-stacked">
+        <fieldset>
+          <template x-if="data.con_id !== ''">
+            <legend>Update Condition</legend>
+          </template>
+          <template x-if="data.con_id === ''">
+            <legend>Create New Condition</legend>
+          </template>
+          <template x-if="data.con_id !== ''">
+            <div>
+              <label for="con_id">Condition ID: </label>
+              <input type="text" disabled x-model="data.con_id">
+            </div>
+          </template>
+          <div>
+            <label for="con_name">Condition Name: </label>
+            <input type="text" x-model="data.con_name">
+          </div>
+          <div>
+            <label for="res_status">Response Status: </label>
+            <input type="number" x-model="data.res_status">
+          </div>
+          <div>
+            <label for="res_type">Response Type: </label>
+            <select name="res_type" id="res_type" x-ref="res_type" x-model="data.res_type">
+              <option value="json" :select="data.res_type === 'json'">JSON</option>
+              <option value="text" :select="data.res_type === 'text'">Text</option>
+              <option value="file" :select="data.res_type === 'file'">File path</option>
+              <option value="status" :select="data.res_type === 'status'">Pure Status Code</option>
+              <option value="online" :select="data.res_type === 'online'">Another URL</option>
+              <option value="saved" :select="data.res_type === 'saved'">Saved response replay</option>
+            </select>
+            <template x-if="$refs.res_type._x_model.get() === 'file'">
+              <div>
+                <input type="file" x-model="data.res_body" disabled><span>File is currently not supported
+                  yet.</span>
+              </div>
+            </template>
+            <template x-if="$refs.res_type._x_model.get() !== 'file'">
+              <div>
+                <label for="res_body">Response body: </label>
+                <textarea name="res_body" id="res_body" cols="30" rows="10" x-model="data.res_body"></textarea>
+              </div>
+            </template>
+          </div>
+          <div>
+            <label for="res_header">Response Header: </label>
+            <textarea name="res_header" id="res_header" cols="30" rows="10" x-model="data.res_header"></textarea>
+          </div>
+          <div class="form-handlers">
+            <div></div>
+            <div>
+              <button type="submit" class="pure-button pure-button-primary">Save Condition</button>
+            </div>
+          </div>
+        </fieldset>
+      </form>
+    </alpine-dialog>
+
+    <div class="header" style="display: flex;align-items: center;justify-content: space-between;">
+      <button class="pure-button"
+        @click.prevent="dispatchEvt('toggledialog', {detail: {name: 'config'}})">Configuration</button>
+      <button class="pure-button" @click.prevent="dispatchEvt('toggledialog', {detail: {name: 'mock'}})">Create
+        New
+        Mock</button>
+    </div>
+    <table class="pure-table pure-table-striped" x-data="enabledRules" @loadenabledlist.document="load">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>URL</th>
+          <th>Title</th>
+          <th>Enabled Condition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="mock in data">
+          <tr>
+            <td x-text="mock.mock_id"></td>
+            <td x-text="mock.url"></td>
+            <td x-text="mock.title"></td>
+            <td>
+              <label for="conditions2">Current: </label>
+              <select name="conditions2" id="conditions2" x-ref="current_con2" x-model="mock.current_con"
+                @change="directChangeCondition(mock)">
+                <option value="" :selected="mock.current_con === ''">Disabled</option>
+                <template x-for="con in mock.cons">
+                  <option :value="con.con_id" :selected="mock.current_con === con.con_id" x-text="con.con_name">
+                  </option>
+                </template>
+              </select>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <div x-data="mocks">
+      <p>Found <span x-text="total"></span> records, shows <span x-text="$store.ui.size"></span> per page.</p>
+      <table @loadmocklist.document="turn2page($store.ui.page)" class="pure-table pure-table-striped">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>URL</th>
+            <!-- <th>Type</th> -->
+            <th>Title</th>
+            <th>Last Modified</th>
+            <th>Categories</th>
+            <th>Conditions</th>
+            <th width="270">Operations</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="mock in data">
+            <tr>
+              <td x-text="mock.mock_id"></td>
+              <td x-text="mock.url"></td>
+              <td x-text="mock.title"></td>
+              <td x-text="formatTimeStr(mock.update_at)"></td>
+              <td x-text="mock.category ? mock.category.split(',') : ''"></td>
+              <td x-text="mock.cons.length"></td>
+              <td>
+                <template x-if="Boolean(mock.current_con) === true">
+                  <button type="button" class="pure-button button-warning"
+                    @click.prevent="disableMock(mock)">Disable</button>
+                </template>
+                <button type="button" class="pure-button button-secondary"
+                  @click.prevent="dispatchEvt('toggledialog', {detail: {name: 'mock', extraEvent: {name: 'loadmockform',detail: mock.mock_id}}})">Edit...</button>
+                <button type="button" class="pure-button button-error"
+                  @click.prevent="delMock(mock.mock_id)">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div class="table-pagination">
+        <template x-if="Math.ceil(total/$store.ui.size) >= 3">
+          <button type="button" @click="turn2page(1)">First Page</button>
+        </template>
+        <!-- <template x-if="total <= 4"> -->
+        <template x-for="i in Math.ceil(total/$store.ui.size)">
+          <button type="button" x-text="i" @click="turn2page(i)" :disabled="$store.ui.page === i"></button>
+        </template>
+        <!-- </template> -->
+        <template x-if="Math.ceil(total/$store.ui.size) >= 3">
+          <button type="button" @click="turn2page(Math.ceil(total/$store.ui.size))">Last Page</button>
+        </template>
+      </div>
+    </div>
+  </div>
+</body>
+<!-- Global Alpine States -->
+<script>
+  var responseTypeMapping = {
+    "json": "JSON",
+    "text": "Text",
+    "file": "File path",
+    "status": "Pure Status Code",
+    "online": "Another URL",
+    "saved": "Saved response replay"
+  }
+  function formatTimeStr(time) {
+    return dayjs(parseInt(time)).format('YYYY/MM/DD HH:mm:ss')
+  }
+  function dispatchEvt(name, payload) {
+    const evt = new CustomEvent(name, { detail: payload ? payload.detail : {} })
+    document.dispatchEvent(evt)
+  }
+
+  document.addEventListener("alpine:init", () => {
+    Alpine.store("ui", {
+      page: 1,
+      size: 10,
+      turn2page: function (page) {
+        this.page = page
+      }
+    })
+    Alpine.data('config', () => ({
+      data: {},
+      init() {
+        loadConfig((res) => {
+          this.data = res.data
+        })
+      }
+    }))
+    Alpine.data('mock', () => ({
+      data: {
+        mock_id: "",
+        url: "",
+        title: "",
+        desc: "",
+        category: "",
+        update_at: 0,
+        cons: []
+      },
+      loadMock(event) {
+        let mock_id = event.detail
+        fetchMock(mock_id, (res) => {
+          this.data = res.data
+        })
+      }
+    }))
+    Alpine.data('mocks', () => ({
+      data: [],
+      total: 0,
+      loadMocks(filters) {
+        fetchMocks({
+          page: filters.page || 1,
+          size: filters.size || 10,
+          c: filters.c || ""
+        }, (res) => {
+          this.data = res.data
+          this.total = res.total
+        })
+      },
+      init() {
+        this.loadMocks({
+          page: Alpine.store('ui').page,
+          size: Alpine.store('ui').size,
+        })
+      },
+      turn2page: function (page) {
+        Alpine.store('ui').turn2page(page)
+        this.loadMocks({
+          page: page,
+          size: Alpine.store('ui').size,
+        })
+      }
+    }))
+    Alpine.data('condition', () => ({
+      data: {
+        res_status: 200,
+        res_headers: '{}',
+        res_body: '',
+        res_type: 'json',
+        con_id: '',
+        con_name: '',
+        mock_id: ''
+      },
+      loadCondition(event) {
+        const { mock_id, con_id } = event.detail
+        this.data.mock_id = mock_id
+        if (con_id) {
+          fetchCondition(mock_id, con_id, (res) => {
+            if (res.data) {
+              this.data = res.data
+            } else {
+              alert("request condition is not exist")
+              dispatchEvt('toggledialog', { detail: { name: 'condition', state: false } })
+            }
+          })
+        }
+      }
+    }))
+    Alpine.data('enabledRules', () => ({
+      data: [],
+      init() {
+        this.load()
+      },
+      load() {
+        fetch("/mocks/list-enabled", {
+          method: 'GET',
+          credentials: "include"
+        }).then(r => r.json()).then(res => {
+          this.data = res.data
+        })
+      }
+    }))
+  })
+</script>
+<script>
+  // async fetch data methods
+  function loadConfig(callback) {
+    fetch("/management/config", {
+      method: "GET",
+      credentials: "include"
+    }).then(r => r.json()).then(data => {
+      callback && callback(data)
+    })
+  }
+  function fetchMock(mock_id, callback) {
+    fetch(`/mocks/item?id=${mock_id}`, {
+      method: "GET",
+      credentials: "include"
+    }).then(r => r.json()).then(res => {
+      callback && callback(res)
+    })
+  }
+  function saveMock(data) {
+    fetch(`/mocks/item`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(data.data)
+    }).then(r => r.json()).then(res => {
+      alert(res.ok === 1 ? "Success!" : "Failed!")
+      if (res.ok) {
+        dispatchEvt('toggledialog', { detail: { name: 'mock', state: false } })
+        dispatchEvt('loadmocklist')
+        dispatchEvt('loadenabledlist')
+      }
+    })
+  }
+  function delMock(mock_id) {
+    var result = window.confirm("Do you really want to delete mock " + '"' + mock_id + '"? This mock will NOT be able to recover.')
+    if (!result) return;
+    fetch("/mocks/item?id=" + mock_id, {
+      method: "DELETE",
+      credentials: "include"
+    }).then(r => r.json()).then(res => {
+      alert(res.ok === 1 ? "Success!" : "Failed!")
+      dispatchEvt('loadmocklist')
+      dispatchEvt('loadenabledlist')
+    })
+  }
+  function fetchMocks(filters, callback) {
+    fetch(`/mocks/list?${filters.page ? `page=${filters.page}` : ""}${filters.size ? `&size=${filters.size}` : ""}${filters.c ? `&c=${filters.c}` : ""}`, {
+      method: "GET",
+      credentials: "include"
+    }).then(r => r.json()).then(res => {
+      callback && callback(res)
+    })
+  }
+  function fetchCondition(mock_id, con_id, callback) {
+    fetchMock(mock_id, (res) => {
+      let cons = res.ok ? res.data.cons : []
+      if (cons.length < 1) {
+        callback && callback({ ok: 0 })
+        return;
+      } else {
+        let con = cons.find(con => con.con_id === con_id)
+        if (!con) {
+          callback && callback({ ok: 0 })
+          return;
+        }
+        callback && callback({ ok: 1, data: con })
+      }
+    })
+  }
+  function saveCondition(data) {
+    fetch(`/mocks/con`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        mock_id: data.data.mock_id,
+        con: data.data
+      })
+    }).then(r => r.json()).then(res => {
+      alert(res.ok === 1 ? "Success!" : "Failed!")
+      if (res.ok) {
+        dispatchEvt('toggledialog', { detail: { name: 'condition', state: false } })
+        dispatchEvt('toggledialog', { detail: { name: 'mock', state: false } })
+        dispatchEvt('loadmocklist')
+        dispatchEvt('loadenabledlist')
+      }
+    })
+  }
+  function delCondition(data) {
+    fetch(`/mocks/con?mock_id=${data.mock_id}&con_id=${data.con_id}`, {
+      method: "DELETE",
+      credentials: "include"
+    }).then(r => r.json()).then(res => {
+      alert(res.ok === 1 ? "Success!" : "Failed!")
+      if (res.ok) {
+        dispatchEvt('toggledialog', { detail: { name: 'condition', state: false } })
+        dispatchEvt('toggledialog', { detail: { name: 'mock', state: false } })
+        dispatchEvt('loadmocklist')
+        dispatchEvt('loadenabledlist')
+      }
+    })
+  }
+  function disableMock(data) {
+    saveMock({
+      data: {
+        ...data,
+        current_con: ''
+      }
+    })
+  }
+  function directChangeCondition(data) {
+    saveMock({
+      data: {
+        ...data
+      }
+    })
+  }
+  function saveConfig(data) {
+    fetch("/management/config", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(data.data)
+    }).then(r => r.json()).then(data => {
+      if (data.ok) {
+        window.alert("Configuration saved successfully!")
+        dispatchEvt('toggledialog', { detail: { name: 'config', state: false } })
+      }
+    })
+  }
+</script>
+<!-- Global Alpine States -->
+<!-- Alpine Web Components -->
+<template id="alpine-dialog-tpl">
+  <style>
+    .fullscreen-layer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      align-items: center;
+      justify-content: center;
+      display: flex;
+      background-color: rgba(0, 0, 0, .5);
+      z-index: 100;
+    }
+
+    .fullscreen-layer .dialog {
+      background-color: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      width: 600px;
+      max-height: 90%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    .fullscreen-layer .dialog .close-btn {
+      position: absolute;
+      right: 0;
+      top: 0;
+    }
+  </style>
+  <div class="fullscreen-layer" x-show="show === true" @toggledialog.document="dialogToggler($event)">
+    <div class="dialog">
+      <div class="close-btn" @click="show = !show"
+        style="width: 40px;height: 40px;cursor:pointer;background: url(./assets/close.svg) no-repeat center/20px;">
+      </div>
+      <slot></slot>
+    </div>
+  </div>
+</template>
+<script>
+  class AlpineDialog extends HTMLElement {
+    constructor() {
+      super()
+      this.name = this.getAttribute("component-name")
+      const template = document.getElementById(
+        "alpine-dialog-tpl"
+      ).content;
+      template.querySelector('.fullscreen-layer').setAttribute('x-data', "AlpineDialogData('" + this.name + "')")
+      const shadow = this.attachShadow({ mode: "open" });
+      shadow.appendChild(template.cloneNode(true));
+      this.shadow = shadow
+    }
+
+    connectedCallback() {
+      document.addEventListener(
+        'alpine:init',
+        () => {
+          Alpine.data('AlpineDialogData', (name) => {
+            return {
+              show: false,
+              dialogToggler(event) {
+                var target = event.detail.name
+                if (target === name) {
+                  if(typeof event.detail.state === 'boolean') {
+                    this.show = event.detail.state
+                  } else {
+                    this.show = !this.show
+                  }
+                  if (event.detail.extraEvent) {
+                    dispatchEvt(event.detail.extraEvent.name, { detail: event.detail.extraEvent.detail })
+                  }
+                }
+              }
+            }
+          })
+        }
+      )
+      document.addEventListener(
+        'alpine:initialized',
+        () => {
+          Alpine.initTree(this.shadow)
+        }
+      )
+    }
+  }
+  customElements.define("alpine-dialog", AlpineDialog)
+</script>
+<!-- Alpine Web Components -->
+
+</html>
