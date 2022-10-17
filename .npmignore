@@ -43,3 +43,7 @@ jspm_packages
 /test
 /.history
 .console.log
+
+# minified npm installed files
+.editorconfig
+README.md
