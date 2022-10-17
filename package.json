@@ -1,6 +1,6 @@
 {
   "name": "whistle.stuntman",
-  "version": "0.0.0-alpha.0",
+  "version": "0.0.0-alpha.1",
   "description": "Web UI for API mock management.",
   "dependencies": {
     "koa": "^2.7.0",
@@ -11,14 +11,11 @@
     "lowdb": "^3.0.0",
     "nanoid": "^4.0.0"
   },
-  "homepage": "https://github.com/arctome/whistle.stuntman#readme",
+  "homepage": "https://github.com/iamspark1e/whistle.stuntman#readme",
   "author": {
     "name": "Spark1e",
     "email": "hi@sparkle.im",
     "url": "http://sparkle.im/"
-  },
-  "devDependencies": {
-    "koa2-swagger-ui": "^5.6.0"
   },
   "scripts": {}
 }
